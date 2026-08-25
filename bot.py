@@ -44,6 +44,20 @@ context_store: Dict[tuple[str, str], Dict[str, Any]] = {}
 conversation_manager = ConversationManager()
 
 
+@app.get("/")
+async def root():
+    """Root welcoming endpoint with links to documentation and health check."""
+    return {
+        "status": "online",
+        "service": "Vera AI Message Engine — magicpin AI Challenge",
+        "team": "Team Vera",
+        "version": "1.0.0",
+        "docs_url": "/docs",
+        "healthz_url": "/v1/healthz",
+        "metadata_url": "/v1/metadata",
+    }
+
+
 @app.get("/v1/healthz", response_model=HealthzResponse)
 async def healthz():
     """Liveness and readiness probe reporting loaded context counts."""
