@@ -1,0 +1,3 @@
+"""
+Vera Message Engine Package.
+"""
