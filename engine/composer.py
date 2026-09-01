@@ -137,11 +137,14 @@ def _compose_deterministic(
             slots = trg_payload.get("available_slots", [])
             slot_str = ""
             if slots and len(slots) >= 2:
-                slot_str = f"Apke liye 2 slots ready hain: {slots[0].get('label', 'Wed 5 Nov, 6pm')} ya {slots[1].get('label', 'Thu 6 Nov, 5pm')}."
+                s0 = slots[0].get('label', 'Wed 5 Nov, 6pm')
+                s1 = slots[1].get('label', 'Thu 6 Nov, 5pm')
+                slot_str = f"Aapke liye 2 slots ready hain: {s0} ya {s1}." if hi_mix else f"We have 2 slots open for you: {s0} or {s1}."
             elif slots:
-                slot_str = f"Apke liye slot ready hai: {slots[0].get('label', 'upcoming Wed')}."
+                s0 = slots[0].get('label', 'upcoming Wed 6pm')
+                slot_str = f"Aapke liye slot ready hai: {s0}." if hi_mix else f"We have an open slot for you: {s0}."
             else:
-                slot_str = "Apke liye morning & evening slots ready hain."
+                slot_str = "Aapke liye morning & evening slots ready hain." if hi_mix else "We have morning & evening slots open for you."
 
             if cat_slug == "dentists":
                 active_offer = _get_active_offer_str(merchant, category)
@@ -162,23 +165,25 @@ def _compose_deterministic(
                 )
 
             elif cat_slug == "salons":
+                active_offer = _get_active_offer_str(merchant, category)
                 body = (
-                    f"Hi {cx_name}! {m_name} {m_locality} here 💇‍♀️ It's time for your routine salon maintenance & hair care. "
-                    f"{slot_str} Reply 1 or 2 to confirm your preferred slot."
+                    f"Hi {cx_name}! {m_name} {m_locality} here 💇‍♀️ It's time for your routine salon maintenance ({active_offer}). "
+                    f"{slot_str} Reply 1 for first slot, 2 for second slot."
                 )
                 return ComposedMessage(
                     body=body,
                     cta="binary",
                     send_as=send_as,
                     suppression_key=suppression_key,
-                    rationale="Salon customer maintenance recall anchored on preferred time slots.",
+                    rationale="Salon customer maintenance recall anchored on preferred time slots and active offer.",
                     template_name="cx_recall_salon_v1"
                 )
 
             elif cat_slug == "gyms":
+                active_offer = _get_active_offer_str(merchant, category)
                 body = (
                     f"Hi {cx_name}! {m_name} {m_locality} here 💪 Your regular fitness routine & assessment cycle is due. "
-                    f"{slot_str} Reply 1 or 2 to lock in your trainer slot."
+                    f"{slot_str} Complimentary trainer assessment included. Reply 1 or 2 to lock in your trainer slot."
                 )
                 return ComposedMessage(
                     body=body,
