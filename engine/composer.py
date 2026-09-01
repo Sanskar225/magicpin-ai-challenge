@@ -502,18 +502,19 @@ def _compose_deterministic(
 
     # 5. Competitor Opened
     if "competitor" in trg_kind:
-        comp_dist = trg_payload.get("distance_km", 1.2)
-        comp_name = trg_payload.get("competitor_name", "A new local business")
+        raw_dist = trg_payload.get("distance_km", 1.2)
+        comp_dist = f"{raw_dist}" if "km" in str(raw_dist) else f"{raw_dist}km"
+        comp_name = trg_payload.get("competitor_name", "a new competitor")
         active_offer = _get_active_offer_str(merchant, category)
         if cat_slug == "dentists":
             body = (
-                f"{salutation}, a new dental clinic ({comp_name}) recently listed on Google Maps {comp_dist}km from {m_name} in {m_locality}. "
+                f"{salutation}, a new dental clinic ({comp_name}) recently listed on Google Maps {comp_dist} from {m_name} in {m_locality}. "
                 f"To protect your local search ranking, I recommend refreshing your photos and promoting your active offer '{active_offer}'. "
                 f"Want me to draft the competitive refresh post? Takes 2 min."
             )
         else:
             body = (
-                f"{salutation}, a new {cat_slug.rstrip('s')} business recently listed on Google Maps {comp_dist}km from {m_name} in {m_locality}. "
+                f"{salutation}, a new {cat_slug.rstrip('s')} business recently listed on Google Maps {comp_dist} from {m_name} in {m_locality}. "
                 f"To protect your search visibility, I recommend refreshing your GBP listing with your active offer '{active_offer}'. "
                 f"Want me to draft the competitive refresh post? Takes 2 min."
             )
