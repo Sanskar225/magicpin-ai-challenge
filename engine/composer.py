@@ -336,28 +336,29 @@ def _compose_deterministic(
     # =========================================================================
     send_as = "vera"
 
-    # 1. High-Urgency Supply Alert / Medication Recall (Urgency = 5)
-    if "supply" in trg_kind or "recall" in trg_kind or "alert" in trg_kind:
-        if cat_slug == "pharmacies" or "drug" in trg_payload or "medication" in trg_payload:
-            med_name = trg_payload.get("medication") or trg_payload.get("product") or trg_payload.get("drug") or "prescribed product"
-            batch = trg_payload.get("batch_number") or trg_payload.get("batch")
-            batch_str = f" (Batch #{batch})" if batch else ""
-            reason = trg_payload.get("reason") or "statutory safety recall"
-            action_needed = trg_payload.get("action_required") or "quarantine stock and check dispensing records"
-            body = (
-                f"URGENT regulatory alert {salutation}: CDSCO notice issued for {med_name}{batch_str} due to {reason}. "
-                f"Required action: {action_needed}. I have prepared the return log sheet and affected patient prescription check for {m_name}. "
-                f"Should I send the compliance protocol over immediately?"
-            )
-            rationale = "Urgent statutory product recall alert with immediate inventory isolation action and patient prescription audit checklist."
-            return ComposedMessage(
-                body=body,
-                cta="binary",
-                send_as=send_as,
-                suppression_key=suppression_key,
-                rationale=rationale,
-                template_name="vera_supply_alert_pharmacy_v1"
-            )
+    # 1. High-Urgency Supply Alert / Product Recall (Urgency = 5)
+    if trg_kind == "supply_alert" or "supply" in trg_kind or "recall" in trg_kind:
+        molecule = trg_payload.get("molecule") or trg_payload.get("medication") or trg_payload.get("product") or trg_payload.get("drug") or "prescribed product"
+        batches = trg_payload.get("affected_batches") or trg_payload.get("batch_number") or trg_payload.get("batches")
+        batch_str = f" (Batches: {', '.join(batches) if isinstance(batches, list) else batches})" if batches else ""
+        mfr = trg_payload.get("manufacturer")
+        mfr_str = f" by {mfr}" if mfr else ""
+        reason = trg_payload.get("reason") or "statutory safety recall"
+        action_needed = trg_payload.get("action_required") or "quarantine affected stock and check dispensing records"
+        body = (
+            f"URGENT regulatory alert {salutation}: CDSCO notice issued for {molecule}{batch_str}{mfr_str}. "
+            f"Required action: {action_needed}. I have prepared the return log sheet and affected patient prescription check for {m_name}. "
+            f"Should I send the compliance protocol over immediately?"
+        )
+        rationale = "Urgent statutory product recall alert with immediate inventory isolation action and patient prescription audit checklist."
+        return ComposedMessage(
+            body=body,
+            cta="binary",
+            send_as=send_as,
+            suppression_key=suppression_key,
+            rationale=rationale,
+            template_name="vera_supply_alert_pharmacy_v1"
+        )
 
     # 2. CDE Opportunity / Medical Webinars
     if trg_kind == "cde_opportunity" or "cde" in trg_kind:
@@ -484,12 +485,12 @@ def _compose_deterministic(
         intent_topic = trg_payload.get("intent_topic", "")
         if "thali" in intent_topic or "corporate" in intent_topic or cat_slug == "restaurants":
             body = (
-                f"{salutation}, here's a starter version — you can edit:\n\n"
-                f"{m_name} Corporate Thali — for offices in {m_locality}\n"
-                f"- 10 thalis @ ₹125 each (₹25 off retail) + free delivery\n"
-                f"- 25 thalis @ ₹115 each + 2 free filter coffees\n"
-                f"- 50+: ₹105 each + 1 free dosa platter\n"
-                f"- WhatsApp the day-before by 5pm; deliver between 12:30-1pm\n\n"
+                f"{salutation}, here's a starter version — you can edit:\\n\\n"
+                f"{m_name} Corporate Thali — for offices in {m_locality}\\n"
+                f"- 10 thalis @ ₹125 each (₹25 off retail) + free delivery\\n"
+                f"- 25 thalis @ ₹115 each + 2 free filter coffees\\n"
+                f"- 50+: ₹105 each + 1 free dosa platter\\n"
+                f"- WhatsApp the day-before by 5pm; deliver between 12:30-1pm\\n\\n"
                 f"Offices in {m_locality} are in your delivery radius. Want me to draft a 3-line WhatsApp to send their facilities managers?"
             )
             rationale = "Direct continuation of merchant's corporate thali planning intent with complete actionable tiers and outreach draft."
@@ -503,11 +504,11 @@ def _compose_deterministic(
             )
         elif "kids_yoga" in intent_topic or "summer_camp" in intent_topic or cat_slug == "gyms":
             body = (
-                f"{salutation}, here's a ready structure for your Kids Yoga Summer Camp at {m_name} {m_locality}:\n\n"
-                f"Zen Kids Yoga Camp (Ages 6-14)\n"
-                f"- 4-week program: 3 sessions/week (Mon-Wed-Fri 8:00 AM)\n"
-                f"- Focus: Posture, breathing, focus drills & fun flexibility\n"
-                f"- Pricing: ₹2,499 per child (includes completion certificate + mat)\n\n"
+                f"{salutation}, here's a ready structure for your Kids Yoga Summer Camp at {m_name} {m_locality}:\\n\\n"
+                f"Zen Kids Yoga Camp (Ages 6-14)\\n"
+                f"- 4-week program: 3 sessions/week (Mon-Wed-Fri 8:00 AM)\\n"
+                f"- Focus: Posture, breathing, focus drills & fun flexibility\\n"
+                f"- Pricing: ₹2,499 per child (includes completion certificate + mat)\\n\\n"
                 f"Want me to create the Google Business Post and WhatsApp announcement for parents? Ready in 5 min."
             )
             rationale = "Actionable program structure drafted immediately in response to summer camp planning request."
@@ -817,9 +818,11 @@ def _compose_deterministic(
 
     # 16. Unverified Google Business Profile
     if trg_kind in ("gbp_unverified", "unverified_gbp") or "unverified" in trg_kind:
+        uplift_raw = trg_payload.get("estimated_uplift_pct")
+        uplift_str = f"an estimated {int(uplift_raw*100)}% higher" if uplift_raw else "up to 3x more"
         body = (
             f"{salutation}, your Google Business Profile for {m_name} in {m_locality} is currently unverified — "
-            f"verified profiles receive up to 3x more customer calls and directions from local searches. "
+            f"verified profiles receive {uplift_str} customer calls and directions from local searches. "
             f"I can guide you through the instant verification steps in 5 minutes. Ready to start?"
         )
         rationale = "Unverified Google profile alert focusing on lost local customer reach with quick guidance offer."
@@ -832,28 +835,39 @@ def _compose_deterministic(
             template_name="vera_gbp_unverified_v1"
         )
 
-    # 17. Dormant with Vera / Winback Eligible Merchant
-    if trg_kind in ("dormant_with_vera", "winback_eligible") or "dormant" in trg_kind:
+    # 17. Winback Eligible Merchant (Explicit)
+    if trg_kind == "winback_eligible" or "winback" in trg_kind:
         days_since = trg_payload.get("days_since_expiry") or merchant.get("subscription", {}).get("days_since_expiry")
         lapsed_cx = trg_payload.get("lapsed_customers_added_since_expiry") or trg_payload.get("lapsed_customers")
         perf_dip = trg_payload.get("perf_dip_pct")
-        active_offer = _get_active_offer_str(merchant, category)
+        days_str = f"it's been {days_since} days since your Vera subscription expired" if days_since else "your subscription expired recently"
+        lapsed_str = f"{lapsed_cx} regular customers became due for recall" if lapsed_cx else "regular customer recall windows opened"
+        dip_str = f" and profile views dipped {int(abs(perf_dip)*100)}%" if perf_dip else ""
 
-        if lapsed_cx or perf_dip:
-            dip_str = f" and profile views dipped {int(perf_dip*100 if perf_dip < 1 else perf_dip)}%" if perf_dip else ""
-            lapsed_str = f"{lapsed_cx} regular customers became due for recall" if lapsed_cx else "customer recall windows opened"
-            days_str = f"since your trial ended {days_since} days ago" if days_since else "recently"
-            body = (
-                f"Hi {salutation}, {days_str} at {m_name}: {lapsed_str}{dip_str}. "
-                f"I've prepared a 1-click reactivate draft with a 14-day grace extension to recover these customers. Should I turn it on?"
-            )
-        else:
-            offer_str = f" for '{active_offer}'" if active_offer else ""
-            body = (
-                f"Hi {salutation}! We haven't connected in a couple of weeks. Local search demand{offer_str} is active in {m_locality}. "
-                f"I've prepared a quick 3-point performance booster for your Google listing. Want me to show you?"
-            )
-        rationale = "Re-engagement message highlighting missed local search traffic and zero-friction assistance."
+        body = (
+            f"Hi {salutation}, {days_str} at {m_name}. In this period, {lapsed_str}{dip_str}. "
+            f"I've prepared a 1-click reactivate draft with a 14-day grace extension to win back these customers. Should I turn it on?"
+        )
+        rationale = "Winback message highlighting lapsed customers and performance loss since subscription expiry with grace reactivation."
+        return ComposedMessage(
+            body=body,
+            cta="binary",
+            send_as=send_as,
+            suppression_key=suppression_key,
+            rationale=rationale,
+            template_name="vera_winback_merchant_v1"
+        )
+
+    # 18. Dormant with Vera (Explicit)
+    if trg_kind == "dormant_with_vera" or "dormant" in trg_kind:
+        days_inactive = trg_payload.get("days_since_last_merchant_message") or 30
+        active_offer = _get_active_offer_str(merchant, category)
+        offer_str = f" featuring your '{active_offer}' offer" if active_offer else ""
+        body = (
+            f"Hi {salutation}! We haven't connected in {days_inactive} days. Local search demand for {cat_slug} is active in {m_locality}. "
+            f"I've prepared a quick 3-point performance booster for your Google listing{offer_str}. Want me to show you?"
+        )
+        rationale = "Re-engagement message for dormant merchant highlighting local search traffic and active offer highlight."
         return ComposedMessage(
             body=body,
             cta="binary",

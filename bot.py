@@ -96,7 +96,7 @@ _preload_dataset()
 async def root():
     """Interactive dashboard for the Vera Message Engine."""
     uptime = int(time.time() - START_TIME)
-    counts = {}
+    counts = {"category": 0, "merchant": 0, "customer": 0, "trigger": 0}
     for scope, _ in context_store.keys():
         counts[scope] = counts.get(scope, 0) + 1
 
@@ -198,9 +198,8 @@ async def tick(body: TickRequest):
     Inspects available triggers, prioritizes by urgency, suppresses duplicates, and generates proactive messages.
     """
     actions: List[ActionItem] = []
-    now_utc = datetime.now(timezone.utc)
 
-    # 1. Resolve trigger payloads and filter out expired triggers
+    # 1. Resolve trigger payloads
     resolved_triggers = []
     for trg_id in body.available_triggers:
         trg_entry = context_store.get(("trigger", trg_id))
@@ -225,16 +224,6 @@ async def tick(body: TickRequest):
                         pass
             if not trg_payload:
                 trg_payload = {"id": trg_id, "kind": trg_id, "payload": {}}
-
-        # Check expiry
-        expires_at_str = trg_payload.get("expires_at")
-        if expires_at_str:
-            try:
-                exp_dt = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-                if exp_dt < now_utc:
-                    continue  # Expired trigger, skip
-            except Exception:
-                pass
 
         urgency = trg_payload.get("urgency", 1)
         resolved_triggers.append((urgency, trg_id, trg_payload))
