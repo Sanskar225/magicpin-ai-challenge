@@ -153,7 +153,7 @@ async def metadata():
         model="deterministic-grounded-composer-v1",
         approach="4-context deterministic synthesis engine with grounded entity extraction & multi-turn intent state machine",
         contact_email="sanskar@example.com",
-        version="1.0.0",
+        version="1.0.1-ed6c44a",
         submitted_at="2026-04-26T08:00:00Z",
     )
 
