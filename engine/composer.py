@@ -38,9 +38,6 @@ def _get_salutation(merchant: Dict[str, Any], category: Dict[str, Any]) -> str:
 
     if owner:
         return owner.strip()
-    if name:
-        clean_name = name.replace("'s", "").replace("’s", "")
-        return clean_name.split()[0]
     return "Partner"
 
 
