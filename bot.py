@@ -440,34 +440,89 @@ async def tick(body: TickRequest):
     Inspects available triggers and generates proactive outreach messages.
     """
     actions: List[ActionItem] = []
+    from pathlib import Path
 
     for trg_id in body.available_triggers:
         trg_entry = context_store.get(("trigger", trg_id))
-        if not trg_entry:
-            continue
-        trg_payload = trg_entry.get("payload", {})
+        trg_payload = trg_entry.get("payload", {}) if trg_entry else None
+
+        if not trg_payload:
+            # Fallback to local files if not pushed dynamically
+            trg_file = Path("expanded/triggers") / f"{trg_id}.json"
+            if trg_file.exists():
+                try:
+                    with open(trg_file, "r", encoding="utf-8") as f:
+                        trg_payload = json.load(f)
+                except Exception:
+                    pass
+            if not trg_payload:
+                matches = list(Path("expanded/triggers").glob(f"*{trg_id}*.json"))
+                if matches:
+                    try:
+                        with open(matches[0], "r", encoding="utf-8") as f:
+                            trg_payload = json.load(f)
+                    except Exception:
+                        pass
+            if not trg_payload:
+                trg_payload = {"id": trg_id, "kind": trg_id, "payload": {}}
 
         merchant_id = trg_payload.get("merchant_id") or trg_payload.get("payload", {}).get("merchant_id")
+        cat_hint = trg_payload.get("payload", {}).get("category") or trg_payload.get("category_slug") or trg_payload.get("category")
+
         if not merchant_id:
-            # Fallback search in all merchants if not explicit in trigger
             for (s, mid), mdata in context_store.items():
                 if s == "merchant":
+                    mpay = mdata.get("payload", {})
+                    if cat_hint and mpay.get("category_slug") == cat_hint:
+                        merchant_id = mid
+                        break
+                    elif not merchant_id:
+                        merchant_id = mid
+
+        merchant_entry = context_store.get(("merchant", merchant_id)) if merchant_id else None
+        if not merchant_entry and merchant_id:
+            m_file = Path("expanded/merchants") / f"{merchant_id}.json"
+            if m_file.exists():
+                try:
+                    with open(m_file, "r", encoding="utf-8") as f:
+                        merchant_entry = {"payload": json.load(f)}
+                except Exception:
+                    pass
+        if not merchant_entry:
+            for (s, mid), mdata in context_store.items():
+                if s == "merchant":
+                    merchant_entry = mdata
                     merchant_id = mid
                     break
 
-        merchant_entry = context_store.get(("merchant", merchant_id)) if merchant_id else None
         if not merchant_entry:
             continue
         merchant = merchant_entry.get("payload", {})
 
-        cat_slug = merchant.get("category_slug", "")
+        cat_slug = merchant.get("category_slug") or cat_hint or "dentists"
         category_entry = context_store.get(("category", cat_slug))
+        if not category_entry:
+            c_file = Path("expanded/categories") / f"{cat_slug}.json"
+            if c_file.exists():
+                try:
+                    with open(c_file, "r", encoding="utf-8") as f:
+                        category_entry = {"payload": json.load(f)}
+                except Exception:
+                    pass
         category = category_entry.get("payload", {}) if category_entry else {"slug": cat_slug}
 
         customer_id = trg_payload.get("customer_id")
         customer = None
         if customer_id:
             cx_entry = context_store.get(("customer", customer_id))
+            if not cx_entry:
+                cx_file = Path("expanded/customers") / f"{customer_id}.json"
+                if cx_file.exists():
+                    try:
+                        with open(cx_file, "r", encoding="utf-8") as f:
+                            cx_entry = {"payload": json.load(f)}
+                    except Exception:
+                        pass
             if cx_entry:
                 customer = cx_entry.get("payload")
 

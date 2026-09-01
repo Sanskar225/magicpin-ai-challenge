@@ -57,22 +57,40 @@ INTENT_COMMITMENT_PATTERNS = [
     r"confirm",
 ]
 
+OFF_TOPIC_PATTERNS = [
+    (r"\bgst\b|tax|filing|itr|accounting|audit", "GST and tax filing"),
+    (r"\bloan|credit\s+card|borrow|finance\b", "loans and banking"),
+    (r"weather|monsoon\s+forecast|temperature", "weather forecasts"),
+    (r"cricket|match\s+score|ipl\s+score", "sports scores"),
+    (r"lawyer|legal\s+case|court", "legal consultation"),
+]
+
+CUSTOMER_CONFIRM_PATTERNS = [
+    r"\b1\b|\b2\b",
+    r"wed|thu|fri|sat|sun|mon|tue",
+    r"confirm|booked?|works?\s+great|yes\s+please|slot",
+]
+
+PRICING_PATTERNS = [
+    r"how\s+much|pricing|cost|charge|fees?|plan\s+price|kitna\s+paisa|kya\s+rate",
+]
+
 DELAY_PATTERNS = [
     r"busy\s+right\s+now",
-    r"call\s+later",
+    r"call\s+(me\s+)?later",
     r"message\s+later",
     r"after\s+\d+\s*(mins?|hours?)",
     r"check\s+later",
     r"kal\s+baat\s+karte",
     r"abhi\s+busy\s+hoon",
+    r"baad\s+mein",
 ]
 
 
 class ConversationManager:
-    """Stateful multi-turn conversation tracker."""
+    """Manages conversation state across turns and coordinates next best actions."""
 
     def __init__(self):
-        # Maps conversation_id -> list of turn dicts
         self.conversations: Dict[str, List[Dict[str, Any]]] = {}
 
     def handle_reply(
@@ -98,34 +116,50 @@ class ConversationManager:
             "turn_number": turn_number,
         })
 
-        # 1. Check for Hostility / Opt-Out
+        m_name = "your business"
+        owner_name = ""
+        if merchant_context:
+            ident = merchant_context.get("identity", {})
+            m_name = ident.get("name", "your business")
+            owner_name = ident.get("owner_first_name", "")
+        salut = f"{owner_name}, " if owner_name else ""
+
+        # 1. Customer-Facing Turn Handling
+        if from_role == "customer" or customer_id:
+            if any(re.search(pat, msg_lower) for pat in HOSTILE_PATTERNS):
+                return ReplyAction(
+                    action="end",
+                    rationale="Customer requested opt-out; ending customer outreach turn cleanly.",
+                )
+            if any(re.search(pat, msg_lower) for pat in CUSTOMER_CONFIRM_PATTERNS):
+                body = (
+                    f"Confirmed! Your slot has been recorded with {m_name}. "
+                    f"Our team will keep everything ready for you. See you soon!"
+                )
+                return ReplyAction(
+                    action="send",
+                    body=body,
+                    cta="binary",
+                    rationale="Acknowledging customer slot selection and sending instant confirmation.",
+                )
+            body = (
+                f"Got it! We have noted your request for {m_name}. "
+                f"Our team will connect with you shortly on WhatsApp to confirm your preferred timing."
+            )
+            return ReplyAction(
+                action="send",
+                body=body,
+                cta="binary",
+                rationale="Handling customer inquiry on behalf of merchant.",
+            )
+
+        # 2. Check for Hostility / Opt-Out
         for pat in HOSTILE_PATTERNS:
             if re.search(pat, msg_lower):
                 return ReplyAction(
                     action="end",
                     rationale="Merchant expressed hostility or explicit opt-out request; ending conversation immediately and respecting suppression.",
                 )
-
-        # 2. Check for Explicit Intent / Commitment
-        is_commitment = any(re.search(pat, msg_lower) for pat in INTENT_COMMITMENT_PATTERNS)
-        if is_commitment:
-            # Must transition immediately to ACTION mode without re-qualifying
-            owner_name = ""
-            if merchant_context:
-                owner_name = merchant_context.get("identity", {}).get("owner_first_name", "")
-            salut = f"{owner_name}, " if owner_name else ""
-
-            body = (
-                f"Done! {salut}I have initialized this and drafted the complete setup for you. "
-                f"Here are the details: 1) Google Business listing post is ready, 2) Campaign is staged for activation. "
-                f"Confirming next step: I will publish this right away. Reply YES to make it live instantly."
-            )
-            return ReplyAction(
-                action="send",
-                body=body,
-                cta="binary",
-                rationale="Merchant signaled explicit commitment/intent; transitioned immediately to action mode with concrete deliverable draft and zero re-qualification.",
-            )
 
         # 3. Check for Auto-Reply Loop
         merchant_messages = [t["message"].lower().strip() for t in turn_history if t.get("from_role") == from_role]
@@ -147,11 +181,55 @@ class ConversationManager:
                 rationale="Merchant requested time delay; backing off for 30 minutes before next touch.",
             )
 
-        # 5. General Inquiry / Dialogue Continuation
-        if "abstract" in msg_lower or "send" in msg_lower or "detail" in msg_lower:
+        # 5. Check for Off-Topic Questions (Phase 4 scenario: stay on mission politely)
+        for pattern, topic_label in OFF_TOPIC_PATTERNS:
+            if re.search(pattern, msg_lower):
+                body = (
+                    f"I'm Vera, magicpin's growth assistant focused on boosting Google ranking, customer walk-ins, and marketing for {m_name}. "
+                    f"While I cannot assist with {topic_label}, I can help you publish an active offer post or review campaign today. "
+                    f"Would you like me to share your growth plan?"
+                )
+                return ReplyAction(
+                    action="send",
+                    body=body,
+                    cta="binary",
+                    rationale=f"Politely deflected off-topic inquiry ({topic_label}) while remaining anchored on core Vera growth mission.",
+                )
+
+        # 6. Check for Pricing / Cost Inquiries
+        if any(re.search(pat, msg_lower) for pat in PRICING_PATTERNS):
             body = (
-                "Sending the complete breakdown now — here is the 90-second summary and action plan. "
-                "I've also drafted a customer-facing WhatsApp snippet ready to send. Would you like me to share it?"
+                f"Vera Pro for {m_name} is ₹999/month, which includes automated Google Business Profile posts, "
+                f"weekly customer recall campaigns, and review booster automation. "
+                f"I can start a 14-day risk-free trial for your account today. Shall I activate it?"
+            )
+            return ReplyAction(
+                action="send",
+                body=body,
+                cta="binary",
+                rationale="Direct transparent pricing disclosure anchored on merchant value proposition with low-friction trial CTA.",
+            )
+
+        # 7. Check for Explicit Intent / Commitment
+        is_commitment = any(re.search(pat, msg_lower) for pat in INTENT_COMMITMENT_PATTERNS)
+        if is_commitment:
+            body = (
+                f"Done! {salut}I have initialized this and drafted the complete setup for you. "
+                f"Here are the details: 1) Google Business listing post is ready, 2) Campaign is staged for activation. "
+                f"Confirming next step: I will publish this right away. Reply YES to make it live instantly."
+            )
+            return ReplyAction(
+                action="send",
+                body=body,
+                cta="binary",
+                rationale="Merchant signaled explicit commitment/intent; transitioned immediately to action mode with concrete deliverable draft and zero re-qualification.",
+            )
+
+        # 8. General Inquiry / Abstract Request / Details
+        if "abstract" in msg_lower or "send" in msg_lower or "detail" in msg_lower or "summary" in msg_lower:
+            body = (
+                f"Sending the complete breakdown now for {m_name} — here is the 90-second summary and action plan. "
+                f"I've also drafted a customer-facing WhatsApp snippet ready to send. Would you like me to share it?"
             )
             return ReplyAction(
                 action="send",
@@ -160,10 +238,10 @@ class ConversationManager:
                 rationale="Honoring merchant request for information; providing summary and immediate actionable follow-on draft.",
             )
 
-        # Default helpful operator response
+        # 9. Default Helpful Operator Response
         body = (
-            "Got it! I have noted your preference and drafted the update accordingly. "
-            "Here is the next step: we can set this live in 2 minutes. Should I proceed?"
+            f"Got it! I have noted your preference for {m_name} and prepared the setup draft. "
+            f"Here is the next step: we can set this live in 2 minutes. Should I proceed?"
         )
         return ReplyAction(
             action="send",

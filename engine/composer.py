@@ -27,16 +27,20 @@ def _get_salutation(merchant: Dict[str, Any], category: Dict[str, Any]) -> str:
     cat_slug = category.get("slug", merchant.get("category_slug", ""))
 
     if cat_slug == "dentists":
-        if owner and not owner.startswith("Dr."):
-            return f"Dr. {owner}"
+        if owner:
+            clean_owner = owner.strip()
+            return clean_owner if clean_owner.startswith("Dr.") else f"Dr. {clean_owner}"
         if name.startswith("Dr."):
-            return name.split()[0] + (" " + name.split()[1] if len(name.split()) > 1 and not name.split()[1].endswith("'s") else "")
-        return f"Dr. {owner}" if owner else (name.split("'s")[0] if "'s" in name else "Dr. Meera")
+            clean_name = name.replace("'s", "").replace("’s", "")
+            parts = clean_name.split()
+            return f"{parts[0]} {parts[1]}" if len(parts) > 1 else parts[0]
+        return "Doctor"
 
     if owner:
-        return owner
+        return owner.strip()
     if name:
-        return name.split("'s")[0].split()[0]
+        clean_name = name.replace("'s", "").replace("’s", "")
+        return clean_name.split()[0]
     return "Partner"
 
 
@@ -562,7 +566,7 @@ def _compose_deterministic(
             )
         elif cat_slug == "dentists":
             body = (
-                f"Dr. {salutation}, quick check — what treatment or consultation query came up most at {m_name} this week? "
+                f"{salutation}, quick check — what treatment or consultation query came up most at {m_name} this week? "
                 f"I can turn it into a 90-second patient education snippet for your WhatsApp status."
             )
         elif cat_slug == "gyms":
