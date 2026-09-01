@@ -1,7 +1,7 @@
 """
 Multi-turn conversation state handler for Vera.
 Handles incoming merchant and customer replies, detecting auto-replies, intent transitions,
-hostility, and delay requests with precision.
+hostility, pricing, and delay requests with precision.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from engine.models import ReplyAction
 
 
-# Common automated canned auto-reply signatures
+# Automated canned auto-reply signatures
 AUTO_REPLY_PATTERNS = [
     r"thank\s+you\s+for\s+contacting",
     r"our\s+team\s+will\s+respond",
@@ -22,19 +22,13 @@ AUTO_REPLY_PATTERNS = [
     r"we\s+are\s+closed\s+right\s+now",
 ]
 
+# Strict hostile & opt-out patterns (avoids false positive on 'should I stop the current offer')
 HOSTILE_PATTERNS = [
-    r"\bstop\b",
-    r"\bspam\b",
-    r"\bunsubscribe\b",
-    r"don't\s+message",
-    r"stop\s+messaging",
-    r"useless",
-    r"not\s+interested",
-    r"remove\s+me",
-    r"do\s+not\s+contact",
-    r"leave\s+me\s+alone",
-    r"bakwas",
-    r"band\s+karo",
+    r"^(stop|unsubscribe|remove\s+me|cancel|stop\s+it|end)$",
+    r"stop\s+(messaging|spamming|contacting|sending|bothering)",
+    r"don['’]?t\s+(message|contact|spam|text)\s+me",
+    r"do\s+not\s+(contact|message|text)\s+me",
+    r"(useless\s+spam|this\s+is\s+spam|leave\s+me\s+alone|bakwas|band\s+karo)",
 ]
 
 INTENT_COMMITMENT_PATTERNS = [
@@ -58,17 +52,18 @@ INTENT_COMMITMENT_PATTERNS = [
 ]
 
 OFF_TOPIC_PATTERNS = [
-    (r"\bgst\b|tax|filing|itr|accounting|audit", "GST and tax filing"),
-    (r"\bloan|credit\s+card|borrow|finance\b", "loans and banking"),
+    (r"gst|tax|filing|itr|accounting|audit", "GST and tax filing"),
+    (r"loan|credit\s+card|borrow|finance", "loans and banking"),
     (r"weather|monsoon\s+forecast|temperature", "weather forecasts"),
     (r"cricket|match\s+score|ipl\s+score", "sports scores"),
     (r"lawyer|legal\s+case|court", "legal consultation"),
 ]
 
+# Strict slot & confirmation patterns (avoids false positive on 'I have 2 kids')
 CUSTOMER_CONFIRM_PATTERNS = [
-    r"\b1\b|\b2\b",
-    r"wed|thu|fri|sat|sun|mon|tue",
-    r"confirm|booked?|works?\s+great|yes\s+please|slot",
+    r"^(1|2|first\s+slot|second\s+slot|slot\s*[12]|option\s*[12])$",
+    r"(confirm|booked?|works\s+for\s+me|yes\s+please|lock\s+it\s+in)",
+    r"(wed|thu|fri|sat|sun|mon|tue)",
 ]
 
 PRICING_PATTERNS = [
@@ -196,10 +191,19 @@ class ConversationManager:
                     rationale=f"Politely deflected off-topic inquiry ({topic_label}) while remaining anchored on core Vera growth mission.",
                 )
 
-        # 6. Check for Pricing / Cost Inquiries
+        # 6. Check for Pricing / Cost Inquiries (Dynamic pricing grounded in merchant context)
         if any(re.search(pat, msg_lower) for pat in PRICING_PATTERNS):
+            sub = merchant_context.get("subscription", {}) if merchant_context else {}
+            plan = sub.get("plan", "Vera Pro")
+            amount = sub.get("renewal_amount") or sub.get("amount")
+
+            if amount:
+                price_text = f"₹{amount:,}/year (or ₹999/month)"
+            else:
+                price_text = "₹999/month"
+
             body = (
-                f"Vera Pro for {m_name} is ₹999/month, which includes automated Google Business Profile posts, "
+                f"{plan} for {m_name} is {price_text}, which includes automated Google Business Profile posts, "
                 f"weekly customer recall campaigns, and review booster automation. "
                 f"I can start a 14-day risk-free trial for your account today. Shall I activate it?"
             )
@@ -207,7 +211,7 @@ class ConversationManager:
                 action="send",
                 body=body,
                 cta="binary",
-                rationale="Direct transparent pricing disclosure anchored on merchant value proposition with low-friction trial CTA.",
+                rationale="Direct transparent pricing disclosure anchored on merchant subscription context with low-friction trial CTA.",
             )
 
         # 7. Check for Explicit Intent / Commitment
